@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ODE 광고 통합 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--navy:#142b4a;--blue:#2864dc;--bg:#f4f7fb;--line:#e4eaf2;--muted:#68778d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1c2b3d}
+header{background:var(--navy);color:white;padding:22px max(18px,calc((100% - 1280px)/2));display:flex;justify-content:space-between;gap:16px;align-items:center}
+h1{font-size:22px;margin:0}header p{margin:4px 0 0;color:#d4e1f4}.wrap{max-width:1280px;margin:22px auto;padding:0 16px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.tab,button{border:1px solid var(--line);background:white;border-radius:9px;padding:10px 14px;cursor:pointer;color:#26384d;font-weight:600}.tab.active,button.primary{background:var(--blue);color:white;border-color:var(--blue)}
+.panel{background:white;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}.filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:5px}.field label{color:var(--muted);font-size:12px}input,select{border:1px solid #d6deea;border-radius:8px;padding:9px;background:white;min-height:38px}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr));gap:10px}.kpi{border:1px solid var(--line);border-radius:12px;padding:14px}.kpi span{display:block;color:var(--muted);font-size:12px}.kpi strong{display:block;font-size:20px;margin-top:5px;overflow-wrap:anywhere}
+h2{font-size:16px;margin:0 0 12px}.note{font-size:12px;color:var(--muted)}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:right}th{background:#f7f9fc;color:#506177;font-size:12px}td:first-child,th:first-child{text-align:left}
+.status{padding:10px 12px;background:#eef4ff;border-radius:9px;color:#264d92;margin-top:10px}.hide{display:none}.uploadgrid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}.filebox{border:1px dashed #b8c7dc;border-radius:10px;padding:12px}.filebox input{width:100%;margin-top:8px}.chart{height:170px;display:flex;align-items:end;gap:7px;padding:10px 4px 0;border-bottom:1px solid var(--line)}.bar{flex:1;min-width:8px;background:#7da5f5;border-radius:5px 5px 0 0;position:relative}.bar small{position:absolute;bottom:-23px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted)}
+footer{color:var(--muted);font-size:12px;padding:8px 0 30px}
+@media(max-width:850px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.uploadgrid{grid-template-columns:1fr 1fr}header{align-items:flex-start;flex-direction:column}}
+@media(max-width:520px){.uploadgrid{grid-template-columns:1fr}.kpi strong{font-size:17px}.wrap{margin-top:12px}}
+</style></head>
+<body>
+<header><div><h1>ODE 광고 통합 대시보드</h1><p>네이버 SA 자동 수집 · 네이버 GFA 보고서 취합</p></div><div id="statusTop">초기 상태 · 실제 계정 연동 전</div></header>
+<div class="wrap">
+<div class="tabs"><button class="tab active" data-tab="all">전체</button><button class="tab" data-tab="sa">네이버 SA</button><button class="tab" data-tab="gfa">네이버 GFA</button><button class="tab" data-tab="upload">GFA 업로드 / 이력</button></div>
+<section class="panel" id="filters"><div class="filters">
+<div class="field"><label>조회 시작일</label><input type="date" id="from"></div><div class="field"><label>조회 종료일</label><input type="date" id="to"></div>
+<div class="field"><label>GFA 상품 유형</label><select id="product"><option value="all">전체</option><option>ADV쇼핑</option><option>부스트업</option><option>미분류</option></select></div>
+<div class="field"><label>검색</label><input id="search" placeholder="캠페인·그룹·키워드"></div>
+<button class="primary" id="apply">조회 적용</button><button id="refresh">새로고침</button><button id="download">현재 표 CSV</button>
+</div><div class="note" style="margin-top:10px">기본 화면은 구조 확인용 예시입니다. 실제 데이터는 GFA 업로드 후 표시됩니다. SA API 자동 수집은 서버 설정이 필요합니다.</div></section>
+<section id="summary" class="panel"><h2>핵심 성과</h2><div class="kpis" id="kpis"></div><div class="status" id="basis">집계 기준: 실제 데이터 연결 전입니다. 보고서 유형별 수치는 중복 합산하지 않도록 원본별로 보관해야 합니다.</div></section>
+<section class="panel" id="trendPanel"><h2>일자별 광고비 추이</h2><div id="chart" class="chart"></div><div class="note" style="margin-top:26px">차트는 선택 기간의 일자별 광고비를 표시합니다. 날짜별 원본 데이터가 없으면 표시할 수 없습니다.</div></section>
+<section class="panel" id="tablePanel"><h2 id="tableTitle">성과 데이터</h2><div class="tablewrap"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div><div class="note" id="tableNote" style="margin-top:10px">원본에 없는 지표는 미제공으로 표시합니다.</div></section>
+<section class="panel hide" id="uploadPanel"><h2>GFA 보고서 업로드</h2><p class="note">보고서 유형을 선택한 뒤 파일을 올려주세요. 이 시제품은 브라우저에서 파일을 읽어 열 이름을 미리 확인합니다. 데이터가 서버에 저장되지는 않습니다.</p>
+<div class="uploadgrid">
+<div class="filebox"><b>캠페인별 보고서</b><input type="file" data-kind="캠페인별" accept=".csv,.xlsx,.xls"></div>
+<div class="filebox"><b>광고그룹별 보고서</b><input type="file" data-kind="광고그룹별" accept=".csv,.xlsx,.xls"></div>
+<div class="filebox"><b>상품별 보고서</b><select class="prodtype"><option>ADV쇼핑</option><option>부스트업</option><option>미분류</option></select><input type="file" data-kind="상품별" accept=".csv,.xlsx,.xls"></div>
+<div class="filebox"><b>파일 구조 미리보기</b><div id="preview" class="note">파일을 선택하면 열 이름과 일부 행을 표시합니다.</div></div>
+</div><div id="history" style="margin-top:16px"></div>
+</section>
+<footer>ODE · 대시보드 초기 시제품 · 실제 운영 전 서버 인증, 권한 관리, 데이터베이스 및 예약 수집 설정이 필요합니다.</footer>
+</div>
+<script>
+const $=s=>document.querySelector(s); const $$=s=>[...document.querySelectorAll(s)];
+let active='all', rows=[], headers=[], history=[];
+const fmt=n=>n==null||n===''?'미제공':Number(n).toLocaleString('ko-KR',{maximumFractionDigits:2});
+const today=new Date(); const iso=d=>d.toISOString().slice(0,10);
+$('#to').value=iso(today);let start=new Date(today);start.setDate(start.getDate()-6);$('#from').value=iso(start);
+const demo=[];
+function getMetric(r,keys){let k=keys.find(k=>r[k]!==undefined&&r[k]!==''&&r[k]!==null);if(!k)return null;let n=Number(String(r[k]).replace(/[₩,%\s,]/g,''));return Number.isFinite(n)?n:null}
+function metrics(data){let cost=0,imp=0,click=0,conv=0,rev=0;let hasCost=false,hasImp=false,hasClick=false,hasConv=false,hasRev=false;
+data.forEach(r=>{let c=getMetric(r,['광고비','총비용','비용','소진액']);let i=getMetric(r,['노출수','노출']);let cl=getMetric(r,['클릭수','클릭']);let cv=getMetric(r,['전환수','구매완료 수','전환']);let rv=getMetric(r,['전환매출','구매완료 전환매출액','전환매출액']);if(c!==null){cost+=c;hasCost=true}if(i!==null){imp+=i;hasImp=true}if(cl!==null){click+=cl;hasClick=true}if(cv!==null){conv+=cv;hasConv=true}if(rv!==null){rev+=rv;hasRev=true}});
+return [{l:'광고비',v:hasCost?fmt(cost)+'원':'미제공'},{l:'노출수',v:hasImp?fmt(imp):'미제공'},{l:'클릭수',v:hasClick?fmt(click):'미제공'},{l:'CTR',v:hasImp&&hasClick&&imp?((click/imp)*100).toFixed(2)+'%':'미제공'},{l:'CPC',v:hasCost&&hasClick&&click?fmt(cost/click)+'원':'미제공'},{l:'전환수',v:hasConv?fmt(conv):'미제공'},{l:'CPA',v:hasCost&&hasConv&&conv?fmt(cost/conv)+'원':'미제공'},{l:'전환매출',v:hasRev?fmt(rev)+'원':'미제공'},{l:'ROAS',v:hasCost&&hasRev&&cost?(rev/cost*100).toFixed(1)+'%':'미제공'}]}
+function render(){let data=rows.filter(r=>{let blob=Object.values(r).join(' ').toLowerCase();return blob.includes($('#search').value.toLowerCase())});$('#kpis').innerHTML=metrics(data).map(x=>`<div class="kpi"><span>${x.l}</span><strong>${x.v}</strong></div>`).join('');
+let cols=headers.length?headers:Object.keys(data[0]||{});$('#thead').innerHTML=cols.map(c=>`<th>${c}</th>`).join('');$('#tbody').innerHTML=data.slice(0,500).map(r=>'<tr>'+cols.map(c=>`<td>${r[c]===undefined||r[c]===''?'미제공':String(r[c]).replaceAll('<','&lt;')}</td>`).join('')+'</tr>').join('');
+$('#tableTitle').textContent=active==='sa'?'네이버 SA 성과':active==='gfa'?'네이버 GFA 성과':'전체 성과 데이터';$('#tableNote').textContent=data.length?`현재 표시 ${Math.min(data.length,500)}행 / 필터 결과 ${data.length}행 · 원본 파일 기준`: '데이터가 없습니다. GFA 보고서를 업로드하거나 서버 연동을 완료해 주세요.';
+$('#basis').textContent=rows.length?'집계 기준: 현재는 업로드된 단일 보고서 미리보기 데이터입니다. 서로 다른 보고서의 수치는 중복 합산하지 않습니다.':'집계 기준: 실제 데이터 연결 전입니다. 보고서 유형별 수치는 중복 합산하지 않도록 원본별로 보관해야 합니다.';
+$('#chart').innerHTML='';}
+$$('.tab').forEach(b=>b.onclick=()=>{active=b.dataset.tab;$$('.tab').forEach(x=>x.classList.toggle('active',x===b));$('#uploadPanel').classList.toggle('hide',active!=='upload');['filters','summary','trendPanel','tablePanel'].forEach(id=>$('#'+id).classList.toggle('hide',active==='upload'));render()});
+$('#apply').onclick=render;$('#search').oninput=render;$('#refresh').onclick=()=>{render();$('#statusTop').textContent='화면 갱신 완료 · API 수집은 서버 연동 후 사용 가능'};
+$('#download').onclick=()=>{if(!rows.length){alert('다운로드할 데이터가 없습니다.');return}let cols=headers.length?headers:Object.keys(rows[0]);let esc=v=>'"'+String(v??'').replaceAll('"','""')+'"';let csv='\ufeff'+[cols.map(esc).join(','),...rows.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\r\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));a.download='ode_dashboard_export.csv';a.click();URL.revokeObjectURL(a.href)};
+$$('input[type=file]').forEach(inp=>inp.onchange=async()=>{const f=inp.files[0];if(!f)return;try{const buf=await f.arrayBuffer();let wb=XLSX.read(buf,{type:'array'});let ws=wb.Sheets[wb.SheetNames[0]];let json=XLSX.utils.sheet_to_json(ws,{defval:''});let hs=json.length?Object.keys(json[0]):[];$('#preview').innerHTML=`<b>${f.name}</b><br>유형: ${inp.dataset.kind}${inp.dataset.kind==='상품별'?' / '+inp.parentElement.querySelector('.prodtype').value:''}<br>행: ${json.length}<br>열: ${hs.join(', ')||'열을 찾을 수 없음'}<br><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${JSON.stringify(json.slice(0,2),null,2).replaceAll('<','&lt;')}</pre>`;
+history.unshift({name:f.name,kind:inp.dataset.kind,product:inp.dataset.kind==='상품별'?inp.parentElement.querySelector('.prodtype').value:'',rows:json.length,time:new Date().toLocaleString('ko-KR'),hash:f.size+'-'+f.lastModified});
+let duplicate=history.slice(1).some(h=>h.hash===history[0].hash&&h.name===history[0].name);$('#history').innerHTML='<h2>이번 브라우저 세션 업로드 이력</h2>'+history.map(h=>`<div class="status">${h.time} · ${h.kind} ${h.product?'· '+h.product:''} · ${h.name} · ${h.rows}행 ${duplicate&&h===history[0]?'· 중복 가능성 감지':''}</div>`).join('');
+// Single file preview only; don't merge different report grains.
+rows=json;headers=hs;active='gfa';$$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==='gfa'));$('#uploadPanel').classList.add('hide');['filters','summary','trendPanel','tablePanel'].forEach(id=>$('#'+id).classList.remove('hide'));render();
+}catch(e){$('#preview').textContent='파일을 읽지 못했습니다. CSV 또는 XLSX 파일인지 확인해 주세요.'}});
+render();
+</script></body></html>
